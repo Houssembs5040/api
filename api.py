@@ -454,7 +454,7 @@ def send_message():
     logger.info(f"Emitting new_message to receiver room: {receiver_room}")
     socketio.emit('new_message', message_data, room=receiver_room)
     logger.info(f"Emitting new_message to sender room: {sender_room}")
-    socketio.emit('new_message', message_data, room=sender_room)
+    socketio.emit('new_message', message_data)
     # Log all clients in rooms
     receiver_clients = socketio.server.manager.rooms.get('/').get(receiver_room, {})
     sender_clients = socketio.server.manager.rooms.get('/').get(sender_room, {})
