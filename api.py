@@ -401,6 +401,9 @@ def handle_join(user_id, auth=None):
             room = str(user_id)
             join_room(room)
             logger.info(f"User {user_id} joined room: {room}")
+            # Log current rooms for this client
+            current_rooms = socketio.server.rooms(sid=request.sid)
+            logger.info(f"Current rooms for client {request.sid}: {current_rooms}")
         else:
             logger.error(f"Unauthorized join attempt: JWT user {jwt_user_id} != {user_id}")
             emit('error', {'message': 'Unauthorized'})
@@ -452,6 +455,11 @@ def send_message():
     socketio.emit('new_message', message_data, room=receiver_room)
     logger.info(f"Emitting new_message to sender room: {sender_room}")
     socketio.emit('new_message', message_data, room=sender_room)
+    # Log all clients in rooms
+    receiver_clients = socketio.server.manager.rooms.get('/').get(receiver_room, {})
+    sender_clients = socketio.server.manager.rooms.get('/').get(sender_room, {})
+    logger.info(f"Clients in receiver room {receiver_room}: {list(receiver_clients.keys())}")
+    logger.info(f"Clients in sender room {sender_room}: {list(sender_clients.keys())}")
 
     logger.info(f"Message sent from {current_user_id} to {receiver_id}")
     return jsonify({'message': 'Message sent successfully', 'message_id': new_message.id}), 201
