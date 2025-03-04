@@ -7,6 +7,11 @@ from flask_socketio import SocketIO, emit, join_room
 from flask_jwt_extended import JWTManager, decode_token, jwt_required, create_access_token, get_jwt_identity, verify_jwt_in_request
 import logging
 from sqlalchemy import distinct, func
+from sqlalchemy.dialects.postgresql import ENUM
+
+# Define ENUM types with names
+GenderEnum = ENUM('Male', 'Female', name='gender_enum', create_type=True)
+StatusEnum = ENUM('Pending', 'Confirmed', 'Completed', 'Cancelled', name='status_enum', create_type=True)
 
 #logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -17,7 +22,7 @@ bcrypt = Bcrypt(app)
 jwt = JWTManager(app)
 socketio = SocketIO(app, cors_allowed_origins="*")
 
-app.config['SQLALCHEMY_DATABASE_URI'] = f'postgresql://neondb_owner:npg_yDgHEK8r9vXe@ep-ancient-bush-a87ccgy7-pooler.eastus2.azure.neon.tech/neondb?sslmode=require'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://neondb_owner:npg_yDgHEK8r9vXe@ep-ancient-bush-a87ccgy7-pooler.eastus2.azure.neon.tech/neondb?sslmode=require'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['JWT_SECRET_KEY'] = 'your-secret-key-here'
 
@@ -31,7 +36,7 @@ class Doctor(db.Model):
     specialty = db.Column(db.String(50), nullable=False)
     city = db.Column(db.String(50), nullable=False)
     image = db.Column(db.String(200))
-    gender = db.Column(db.Enum('Male', 'Female'))
+    gender = db.Column(GenderEnum)
     address = db.Column(db.String(255))
     phone = db.Column(db.String(20))
 
@@ -85,7 +90,7 @@ class Appointment(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     doctor_id = db.Column(db.Integer, db.ForeignKey('doctors.id'), nullable=False)
     appointment_date = db.Column(db.DateTime, nullable=False)
-    status = db.Column(db.Enum('Pending', 'Confirmed', 'Completed', 'Cancelled'), default='Pending')
+    status = db.Column(StatusEnum, default='Pending')
 
     def to_dict(self):
         return {
@@ -568,8 +573,10 @@ def get_user_by_doctor_id():
     }), 200
 
 if __name__ == '__main__':
-    # For local testing only
+    # Run locally with Flask-SocketIO's development server
     socketio.run(app, debug=True, host='0.0.0.0', port=5000)
 else:
-    # For PythonAnywhere
+    # Expose the WSGI application for production (Render, etc.)
     application = app
+    # Optional: Explicitly initialize SocketIO for production compatibility
+    socketio.init_app(app)
