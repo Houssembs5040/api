@@ -17,7 +17,7 @@ bcrypt = Bcrypt(app)
 jwt = JWTManager(app)
 socketio = SocketIO(app, cors_allowed_origins="*")
 
-app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://SamBs5040:Ranna_123@SamBs5040.mysql.pythonanywhere-services.com/SamBs5040$doctor_db'
+app.config['SQLALCHEMY_DATABASE_URI'] = f'mysql://SamBs5040:Ranna_123@SamBs5040.mysql.pythonanywhere-services.com/SamBs5040$doctor_db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['JWT_SECRET_KEY'] = 'your-secret-key-here'
 
