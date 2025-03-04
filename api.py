@@ -1,6 +1,3 @@
-import eventlet
-eventlet.monkey_patch()
-
 from datetime import datetime, timedelta
 from flask import Flask, jsonify, request
 from flask_sqlalchemy import SQLAlchemy
@@ -23,7 +20,7 @@ app = Flask(__name__)
 CORS(app)
 bcrypt = Bcrypt(app)
 jwt = JWTManager(app)
-socketio = SocketIO(app, cors_allowed_origins="*")
+socketio = SocketIO(app, cors_allowed_origins="*" , async_mode='gevent')
 
 app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://neondb_owner:npg_yDgHEK8r9vXe@ep-ancient-bush-a87ccgy7-pooler.eastus2.azure.neon.tech/neondb?sslmode=require'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
