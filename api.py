@@ -447,8 +447,8 @@ def send_message():
         'sent_at': new_message.sent_at.isoformat(),
         'is_read': new_message.is_read
     }
-    socketio.emit('new_message', message_data, room=str(receiver_id))
-    socketio.emit('new_message', message_data, room=str(current_user_id))
+    logger.info(f"Broadcasting new_message: {message_data}")
+    socketio.emit('new_message', message_data)  # Broadcast to all clients
 
     logger.info(f"Message sent from {current_user_id} to {receiver_id}")
     return jsonify({'message': 'Message sent successfully', 'message_id': new_message.id}), 201
