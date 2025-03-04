@@ -393,14 +393,14 @@ def handle_join(user_id, auth=None):
         logger.error("No token provided in join event")
         emit('error', {'message': 'No authentication token provided'})
         return
-
     token = auth['token']
     try:
         decoded = decode_token(token)
-        jwt_user_id = int(decoded['sub'])  # 'sub' contains the user ID from JWT
+        jwt_user_id = int(decoded['sub'])
         if jwt_user_id == int(user_id):
-            join_room(str(user_id))
-            logger.info(f"User {user_id} joined room")
+            room = str(user_id)
+            join_room(room)
+            logger.info(f"User {user_id} joined room: {room}")
         else:
             logger.error(f"Unauthorized join attempt: JWT user {jwt_user_id} != {user_id}")
             emit('error', {'message': 'Unauthorized'})
@@ -408,7 +408,6 @@ def handle_join(user_id, auth=None):
         logger.error(f"Error verifying token: {e}")
         emit('error', {'message': 'Authentication failed'})
 
-# Send a message
 @app.route('/api/messages/send', methods=['POST'])
 @jwt_required()
 def send_message():
@@ -447,11 +446,17 @@ def send_message():
         'sent_at': new_message.sent_at.isoformat(),
         'is_read': new_message.is_read
     }
-    logger.info(f"Broadcasting new_message: {message_data}")
-    socketio.emit('new_message', message_data)  # Broadcast to all clients
+    receiver_room = str(receiver_id)
+    sender_room = str(current_user_id)
+    logger.info(f"Emitting new_message to receiver room: {receiver_room}")
+    socketio.emit('new_message', message_data, room=receiver_room)
+    logger.info(f"Emitting new_message to sender room: {sender_room}")
+    socketio.emit('new_message', message_data, room=sender_room)
 
     logger.info(f"Message sent from {current_user_id} to {receiver_id}")
     return jsonify({'message': 'Message sent successfully', 'message_id': new_message.id}), 201
+
+
 
 # Get messages between current user and another user
 @app.route('/api/messages', methods=['POST'])
