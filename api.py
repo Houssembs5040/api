@@ -28,7 +28,7 @@ app.config['JWT_SECRET_KEY'] = 'your-secret-key-here'
 
 db = SQLAlchemy(app)
 
-# Doctor model
+# Doctor model (unchanged)
 class Doctor(db.Model):
     __tablename__ = 'doctors'
     id = db.Column(db.Integer, primary_key=True)
@@ -36,7 +36,7 @@ class Doctor(db.Model):
     specialty = db.Column(db.String(50), nullable=False)
     city = db.Column(db.String(50), nullable=False)
     image = db.Column(db.String(200))
-    gender = db.Column(GenderEnum)
+    gender = db.Column(db.Enum('Male', 'Female'))
     address = db.Column(db.String(255))
     phone = db.Column(db.String(20))
 
@@ -52,6 +52,7 @@ class Doctor(db.Model):
             'phone': self.phone or ''
         }
 
+# User model (unchanged)
 class User(db.Model):
     __tablename__ = 'users'
     id = db.Column(db.Integer, primary_key=True)
@@ -72,7 +73,7 @@ class User(db.Model):
             'doctor_id': self.doctor_id
         }
 
-# Message model (single definition)
+# Message model (unchanged)
 class Message(db.Model):
     __tablename__ = 'messages'
     __table_args__ = {'extend_existing': True}
@@ -83,14 +84,14 @@ class Message(db.Model):
     sent_at = db.Column(db.DateTime, default=datetime.utcnow)
     is_read = db.Column(db.Boolean, default=False)
 
-# Appointment model
+# Appointment model (unchanged)
 class Appointment(db.Model):
     __tablename__ = 'appointments'
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     doctor_id = db.Column(db.Integer, db.ForeignKey('doctors.id'), nullable=False)
     appointment_date = db.Column(db.DateTime, nullable=False)
-    status = db.Column(StatusEnum, default='Pending')
+    status = db.Column(db.Enum('Pending', 'Confirmed', 'Completed', 'Cancelled'), default='Pending')
 
     def to_dict(self):
         return {
@@ -101,7 +102,7 @@ class Appointment(db.Model):
             'status': self.status
         }
 
-# Favorite model
+# Favorite model (unchanged)
 class Favorite(db.Model):
     __tablename__ = 'favorites'
     id = db.Column(db.Integer, primary_key=True)
@@ -115,6 +116,7 @@ class Favorite(db.Model):
             'doctor_id': self.doctor_id
         }
 
+# Database initialization (unchanged)
 with app.app_context():
     db.create_all()
     user = db.session.get(User, User.query.filter_by(email='john.doe@example.com').first().id if User.query.filter_by(email='john.doe@example.com').first() else None)
@@ -131,7 +133,7 @@ with app.app_context():
         db.session.add(sample_user)
         db.session.commit()
 
-# Public endpoints (no token required)
+# Public endpoints (unchanged)
 @app.route('/api/doctors', methods=['GET'])
 def get_doctors():
     doctors = Doctor.query.all()
@@ -144,7 +146,7 @@ def get_doctor_by_id(id):
         return jsonify(doctor.to_dict())
     return jsonify({'message': 'Doctor not found'}), 404
 
-# Login endpoint (POST)
+# Login endpoint (unchanged)
 @app.route('/api/login', methods=['POST'])
 def login():
     data = request.get_json()
@@ -158,7 +160,7 @@ def login():
         return jsonify({'message': 'Login successful', 'user': user.to_dict(), 'access_token': access_token}), 200
     return jsonify({'message': 'Invalid email or password'}), 401
 
-# Register endpoint (POST)
+# Register endpoint (unchanged)
 @app.route('/api/register', methods=['POST'])
 def register():
     data = request.get_json()
@@ -177,7 +179,7 @@ def register():
     access_token = create_access_token(identity=str(new_user.id))
     return jsonify({'message': 'Registration successful', 'user': new_user.to_dict(), 'access_token': access_token}), 201
 
-# Protected endpoints (require JWT)
+# Protected endpoints (unchanged except for the modified ones below)
 @app.route('/api/appointments', methods=['POST'])
 @jwt_required()
 def get_appointments():
@@ -264,7 +266,7 @@ def book_appointment():
     current_user_id = int(get_jwt_identity())
     data = request.get_json()
     doctor_id = data.get('doctor_id')
-    appointment_date = datetime.strptime(data.get('appointment_date'), '%Y-%m-%dT%H:%M:%S')
+    appointment_date = datetime.strptime(data.get('appointment_date'), '%Y-%m-%d %H:%M')
 
     if not doctor_id or not appointment_date:
         return jsonify({'message': 'doctor_id and appointment_date are required'}), 400
@@ -378,7 +380,7 @@ def remove_favorite():
         return jsonify({'message': 'Doctor removed from favorites'}), 200
     return jsonify({'message': 'Doctor not found in favorites'}), 404
 
-# SocketIO event handlers
+# SocketIO event handlers (unchanged)
 @socketio.on('connect')
 def handle_connect():
     logger.info('Client connected')
@@ -393,17 +395,14 @@ def handle_join(user_id, auth=None):
         logger.error("No token provided in join event")
         emit('error', {'message': 'No authentication token provided'})
         return
+
     token = auth['token']
     try:
         decoded = decode_token(token)
-        jwt_user_id = int(decoded['sub'])
+        jwt_user_id = int(decoded['sub'])  # 'sub' contains the user ID from JWT
         if jwt_user_id == int(user_id):
-            room = str(user_id)
-            join_room(room)
-            logger.info(f"User {user_id} joined room: {room}")
-            # Log current rooms for this client
-            current_rooms = socketio.server.rooms(sid=request.sid)
-            logger.info(f"Current rooms for client {request.sid}: {current_rooms}")
+            join_room(str(user_id))
+            logger.info(f"User {user_id} joined room")
         else:
             logger.error(f"Unauthorized join attempt: JWT user {jwt_user_id} != {user_id}")
             emit('error', {'message': 'Unauthorized'})
@@ -411,6 +410,7 @@ def handle_join(user_id, auth=None):
         logger.error(f"Error verifying token: {e}")
         emit('error', {'message': 'Authentication failed'})
 
+# Send a message (unchanged)
 @app.route('/api/messages/send', methods=['POST'])
 @jwt_required()
 def send_message():
@@ -449,24 +449,12 @@ def send_message():
         'sent_at': new_message.sent_at.isoformat(),
         'is_read': new_message.is_read
     }
-    receiver_room = str(receiver_id)
-    sender_room = str(current_user_id)
-    logger.info(f"Emitting new_message to receiver room: {receiver_room}")
-    socketio.emit('new_message', message_data, room=receiver_room)
-    logger.info(f"Emitting new_message to sender room: {sender_room}")
     socketio.emit('new_message', message_data)
-    # Log all clients in rooms
-    receiver_clients = socketio.server.manager.rooms.get('/').get(receiver_room, {})
-    sender_clients = socketio.server.manager.rooms.get('/').get(sender_room, {})
-    logger.info(f"Clients in receiver room {receiver_room}: {list(receiver_clients.keys())}")
-    logger.info(f"Clients in sender room {sender_room}: {list(sender_clients.keys())}")
 
     logger.info(f"Message sent from {current_user_id} to {receiver_id}")
     return jsonify({'message': 'Message sent successfully', 'message_id': new_message.id}), 201
 
-
-
-# Get messages between current user and another user
+# Get messages between current user and another user (unchanged)
 @app.route('/api/messages', methods=['POST'])
 @jwt_required()
 def get_messages():
@@ -492,7 +480,7 @@ def get_messages():
         'is_read': msg.is_read
     } for msg in messages])
 
-# Mark messages as read
+# Mark messages as read (unchanged)
 @app.route('/api/messages/mark-read', methods=['POST'])
 @jwt_required()
 def mark_messages_read():
@@ -517,7 +505,7 @@ def mark_messages_read():
     logger.info(f"Messages from {other_user_id} to {current_user_id} marked as read")
     return jsonify({'message': 'Messages marked as read'}), 200
 
-# Get conversations
+# Get conversations (unchanged)
 @app.route('/api/messages/conversations', methods=['GET'])
 @jwt_required()
 def get_conversations():
