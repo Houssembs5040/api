@@ -28,7 +28,7 @@ app.config['JWT_SECRET_KEY'] = 'your-secret-key-here'
 
 db = SQLAlchemy(app)
 
-# Doctor model (unchanged)
+# Doctor model
 class Doctor(db.Model):
     __tablename__ = 'doctors'
     id = db.Column(db.Integer, primary_key=True)
@@ -36,7 +36,7 @@ class Doctor(db.Model):
     specialty = db.Column(db.String(50), nullable=False)
     city = db.Column(db.String(50), nullable=False)
     image = db.Column(db.String(200))
-    gender = db.Column(db.Enum('Male', 'Female'))
+    gender = db.Column(GenderEnum)
     address = db.Column(db.String(255))
     phone = db.Column(db.String(20))
 
@@ -52,7 +52,6 @@ class Doctor(db.Model):
             'phone': self.phone or ''
         }
 
-# User model (unchanged)
 class User(db.Model):
     __tablename__ = 'users'
     id = db.Column(db.Integer, primary_key=True)
@@ -73,7 +72,7 @@ class User(db.Model):
             'doctor_id': self.doctor_id
         }
 
-# Message model (unchanged)
+# Message model (single definition)
 class Message(db.Model):
     __tablename__ = 'messages'
     __table_args__ = {'extend_existing': True}
@@ -84,14 +83,14 @@ class Message(db.Model):
     sent_at = db.Column(db.DateTime, default=datetime.utcnow)
     is_read = db.Column(db.Boolean, default=False)
 
-# Appointment model (unchanged)
+# Appointment model
 class Appointment(db.Model):
     __tablename__ = 'appointments'
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     doctor_id = db.Column(db.Integer, db.ForeignKey('doctors.id'), nullable=False)
     appointment_date = db.Column(db.DateTime, nullable=False)
-    status = db.Column(db.Enum('Pending', 'Confirmed', 'Completed', 'Cancelled'), default='Pending')
+    status = db.Column(StatusEnum, default='Pending')
 
     def to_dict(self):
         return {
@@ -102,7 +101,7 @@ class Appointment(db.Model):
             'status': self.status
         }
 
-# Favorite model (unchanged)
+# Favorite model
 class Favorite(db.Model):
     __tablename__ = 'favorites'
     id = db.Column(db.Integer, primary_key=True)
@@ -115,7 +114,6 @@ class Favorite(db.Model):
             'user_id': self.user_id,
             'doctor_id': self.doctor_id
         }
-
 # Database initialization (unchanged)
 with app.app_context():
     db.create_all()
