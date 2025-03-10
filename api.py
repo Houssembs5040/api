@@ -758,6 +758,27 @@ def add_notification_endpoint():
     notification = add_notification(user_id, message)
     return jsonify({'message': 'Notification added successfully', 'notification': notification.to_dict()}), 201
 
+@app.route('/api/users/all', methods=['GET'])
+@jwt_required()
+def get_all_users():
+    current_user_id = int(get_jwt_identity())
+    user = db.session.get(User, current_user_id)
+    if not user.is_doctor:
+        return jsonify({'message': 'Unauthorized: Doctors only'}), 403
+    
+    users = User.query.all()
+    return jsonify([{
+        'user_id': u.id,
+        'first_name': u.first_name,
+        'last_name': u.last_name,
+        'is_doctor': u.is_doctor,
+        'doctor_id': u.doctor_id,
+        'specialty': d.specialty if u.is_doctor and (d := Doctor.query.get(u.doctor_id)) else None,
+        'city': d.city if u.is_doctor and (d := Doctor.query.get(u.doctor_id)) else None,
+        'gender': d.gender if u.is_doctor and (d := Doctor.query.get(u.doctor_id)) else None,
+        'image': d.image if u.is_doctor and (d := Doctor.query.get(u.doctor_id)) else None
+    } for u in users]), 200
+
 if __name__ == '__main__':
     # Run locally with Flask-SocketIO's development server
     socketio.run(app, debug=True, host='0.0.0.0', port=5000)
