@@ -131,6 +131,38 @@ with app.app_context():
         db.session.add(sample_user)
         db.session.commit()
 
+# New Notification model
+class Notification(db.Model):
+    __tablename__ = 'notifications'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    message = db.Column(db.String(200), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    is_read = db.Column(db.Boolean, default=False)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'user_id': self.user_id,
+            'message': self.message,
+            'created_at': self.created_at.isoformat(),
+            'is_read': self.is_read
+        }
+# Helper to add a notification
+def add_notification(user_id, message, related_message=None, sender_id=None, notification_type=None):
+    notification = Notification(user_id=user_id, message=message)
+    db.session.add(notification)
+    db.session.commit()
+    notification_data = notification.to_dict()
+    if related_message:
+        notification_data['related_message'] = related_message
+    if sender_id:
+        notification_data['sender_id'] = sender_id
+    if notification_type:
+        notification_data['notification_type'] = notification_type  # Add type to distinguish
+    socketio.emit('new_notification', notification_data, room=str(user_id))
+    return notification
+
 # Public endpoints (unchanged)
 @app.route('/api/doctors', methods=['GET'])
 def get_doctors():
@@ -254,6 +286,19 @@ def delete_appointment():
     if appointment.user_id != current_user_id:
         return jsonify({'message': 'Unauthorized: You can only delete your own appointments'}), 403
 
+    # Notify the doctor
+    doctor_user = User.query.filter_by(doctor_id=appointment.doctor_id, is_doctor=True).first()
+    if doctor_user:
+        user = db.session.get(User, current_user_id)
+        doctor_message = f"Appointment canceled by {user.first_name} on {appointment.appointment_date.strftime('%Y-%m-%d %H:%M')}"
+        add_notification(
+            doctor_user.id, 
+            doctor_message, 
+            related_message=doctor_message, 
+            sender_id=current_user_id,  # Patient’s ID
+            notification_type='appointment_canceled'
+        )
+
     db.session.delete(appointment)
     db.session.commit()
     return jsonify({'message': 'Appointment deleted successfully'}), 200
@@ -284,6 +329,30 @@ def book_appointment():
     )
     db.session.add(new_appointment)
     db.session.commit()
+
+    # Notify the doctor
+    doctor_user = User.query.filter_by(doctor_id=doctor_id, is_doctor=True).first()
+    if doctor_user:
+        doctor_message = f"New appointment booked by {user.first_name} on {appointment_date.strftime('%Y-%m-%d %H:%M')}"
+        add_notification(
+            doctor_user.id, 
+            doctor_message, 
+            related_message=doctor_message, 
+            sender_id=current_user_id,  # Patient’s ID
+            notification_type='appointment_booked'
+        )
+
+    # Notify the user
+    doctor = db.session.get(Doctor, doctor_id)
+    user_message = f"New appointment booked with Dr. {doctor.name} on {appointment_date.strftime('%Y-%m-%d %H:%M')}"
+    add_notification(
+        current_user_id, 
+        user_message, 
+        related_message=user_message, 
+        sender_id=doctor_user.id if doctor_user else None, 
+        notification_type='appointment_booked'
+    )
+
     return jsonify({'message': 'Appointment booked successfully', 'appointment': new_appointment.to_dict()}), 201
 
 @app.route('/api/favorites', methods=['POST'])
@@ -397,7 +466,7 @@ def handle_join(user_id, auth=None):
     token = auth['token']
     try:
         decoded = decode_token(token)
-        jwt_user_id = int(decoded['sub'])  # 'sub' contains the user ID from JWT
+        jwt_user_id = int(decoded['sub'])
         if jwt_user_id == int(user_id):
             join_room(str(user_id))
             logger.info(f"User {user_id} joined room")
@@ -408,7 +477,20 @@ def handle_join(user_id, auth=None):
         logger.error(f"Error verifying token: {e}")
         emit('error', {'message': 'Authentication failed'})
 
-# Send a message (unchanged)
+@socketio.on('join_chat')
+def handle_join_chat(data):
+    room = data.get('room')
+    if room:
+        join_room(room)
+        logger.info(f"User joined chat room: {room}")
+
+@socketio.on('leave_chat')
+def handle_leave_chat(data):
+    room = data.get('room')
+    if room:
+        leave_room(room)
+        logger.info(f"User left chat room: {room}")
+
 @app.route('/api/messages/send', methods=['POST'])
 @jwt_required()
 def send_message():
@@ -448,6 +530,23 @@ def send_message():
         'is_read': new_message.is_read
     }
     socketio.emit('new_message', message_data)
+
+    # Check if receiver is in the chat room with sender
+    chat_room = f"chat_{min(current_user_id, receiver_id)}_{max(current_user_id, receiver_id)}"
+    receiver_rooms = socketio.server.manager.rooms.get('/', {}).get(str(receiver_id), [])
+    if chat_room in receiver_rooms:
+        logger.info(f"Receiver {receiver_id} is in chat {chat_room}, skipping notification")
+    else:
+        sender = db.session.get(User, current_user_id)
+        prefix = "New message from Dr." if sender.is_doctor else "New message from"
+        preview_message = f"{prefix} {sender.first_name}: {message_text}"
+        add_notification(
+            receiver_id, 
+            preview_message, 
+            related_message=message_text, 
+            sender_id=current_user_id, 
+            notification_type='message'
+        )
 
     logger.info(f"Message sent from {current_user_id} to {receiver_id}")
     return jsonify({'message': 'Message sent successfully', 'message_id': new_message.id}), 201
@@ -625,6 +724,39 @@ def get_day_schedule(doctor_id):
     booked_slots = [appt.appointment_date.strftime('%H:%M') for appt in appointments]
     schedule = [{"time": slot, "available": slot not in booked_slots} for slot in slots]
     return jsonify(schedule)
+
+# New notification endpoints
+@app.route('/api/notifications', methods=['GET'])
+@jwt_required()
+def get_notifications():
+    user_id = int(get_jwt_identity())
+    notifications = Notification.query.filter_by(user_id=user_id).order_by(Notification.created_at.desc()).all()
+    return jsonify([n.to_dict() for n in notifications])
+
+@app.route('/api/notifications/<int:notification_id>/read', methods=['POST'])
+@jwt_required()
+def mark_notification_read(notification_id):
+    user_id = int(get_jwt_identity())
+    notification = Notification.query.filter_by(id=notification_id, user_id=user_id).first()
+    if not notification:
+        return jsonify({'message': 'Notification not found'}), 404
+    notification.is_read = True
+    db.session.commit()
+    return jsonify({'message': 'Notification marked as read'}), 200
+
+@app.route('/api/notifications/add', methods=['POST'])
+@jwt_required()
+def add_notification_endpoint():
+    data = request.get_json()
+    user_id = data.get('user_id')
+    message = data.get('message')
+
+    if not user_id or not message:
+        return jsonify({'message': 'user_id and message are required'}), 400
+
+    # Add the notification
+    notification = add_notification(user_id, message)
+    return jsonify({'message': 'Notification added successfully', 'notification': notification.to_dict()}), 201
 
 if __name__ == '__main__':
     # Run locally with Flask-SocketIO's development server
