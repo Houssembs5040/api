@@ -165,7 +165,6 @@ def add_notification(user_id, message, related_message=None, sender_id=None, not
 
 # Public endpoints (unchanged)
 @app.route('/api/doctors', methods=['GET'])
-@jwt_required()
 def get_doctors():
     page = int(request.args.get('page', 1))
     limit = int(request.args.get('limit', 5))
