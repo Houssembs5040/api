@@ -163,6 +163,31 @@ def add_notification(user_id, message, related_message=None, sender_id=None, not
         notification_data['notification_type'] = notification_type  # Add type to distinguish
     socketio.emit('new_notification', notification_data, room=str(user_id))
     return notification
+
+@app.route('/api/doctors', methods=['GET'])
+def get_doctors():
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('limit', 5, type=int)
+    name = request.args.get('name', '')
+    specialty = request.args.get('specialty', '')
+    city = request.args.get('city', '')
+
+    query = Doctor.query
+    if name:
+        query = query.filter(Doctor.name.ilike(f'%{name}%'))
+    if specialty:
+        query = query.filter(Doctor.specialty == specialty)
+    if city:
+        query = query.filter(Doctor.city == city)
+
+    doctors = query.paginate(page=page, per_page=per_page, error_out=False)
+    return jsonify({
+        'doctors': [doctor.to_dict() for doctor in doctors.items],
+        'total': doctors.total,
+        'pages': doctors.pages,
+        'page': doctors.page
+    })
+
 @app.route('/api/users/all', methods=['GET'])
 @jwt_required()
 def get_all_users():
