@@ -61,6 +61,7 @@ class User(db.Model):
     password = db.Column(db.String(255), nullable=False)
     is_doctor = db.Column(db.Boolean, default=False)
     doctor_id = db.Column(db.Integer, db.ForeignKey('doctors.id'), nullable=True)
+    doctor = db.relationship('Doctor', backref='user', uselist=False, lazy='joined') 
 
     def to_dict(self):
         return {
@@ -162,62 +163,64 @@ def add_notification(user_id, message, related_message=None, sender_id=None, not
         notification_data['notification_type'] = notification_type  # Add type to distinguish
     socketio.emit('new_notification', notification_data, room=str(user_id))
     return notification
-
-# Public endpoints (unchanged)
-@app.route('/api/doctors', methods=['GET'])
-def get_doctors():
-    page = int(request.args.get('page', 1))
-    limit = int(request.args.get('limit', 5))
-    query = request.args.get('query', '')
-    specialty = request.args.get('specialty', '')
-    city = request.args.get('city', '')
-
-    doctors_query = Doctor.query
-    if query:
-        doctors_query = doctors_query.filter(Doctor.name.ilike(f'%{query}%'))
-    if specialty:
-        doctors_query = doctors_query.filter(Doctor.specialty == specialty)
-    if city:
-        doctors_query = doctors_query.filter(Doctor.city == city)
-
-    doctors = doctors_query.paginate(page=page, per_page=limit, error_out=False).items
-    return jsonify([{
-        'id': d.id,
-        'name': d.name,
-        'specialty': d.specialty,
-        'city': d.city,
-        'image': d.image,
-        'gender': d.gender
-    } for d in doctors]), 200
-
-@app.route('/api/users/search', methods=['GET'])
+@app.route('/api/users/all', methods=['GET'])
 @jwt_required()
-def search_users():
+def get_all_users():
     current_user_id = int(get_jwt_identity())
     user = db.session.get(User, current_user_id)
     if not user.is_doctor:
         return jsonify({'message': 'Unauthorized: Doctors only'}), 403
 
-    query = request.args.get('query', '')
-    page = int(request.args.get('page', 1))
-    limit = int(request.args.get('limit', 5))
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('limit', 5, type=int)
+    name = request.args.get('name', '')
 
-    users_query = User.query.filter(
-        (User.first_name + ' ' + User.last_name).ilike(f'%{query}%')
-    )
-    users = users_query.paginate(page=page, per_page=limit, error_out=False).items
-    return jsonify([{
-        'user_id': u.id,
-        'first_name': u.first_name,
-        'last_name': u.last_name,
-        'is_doctor': u.is_doctor,
-        'doctor_id': u.doctor_id,
-        'specialty': d.specialty if u.is_doctor and (d := Doctor.query.get(u.doctor_id)) else None,
-        'city': d.city if u.is_doctor and (d := Doctor.query.get(u.doctor_id)) else None,
-        'gender': d.gender if u.is_doctor and (d := Doctor.query.get(u.doctor_id)) else None,
-        'image': d.image if u.is_doctor and (d := Doctor.query.get(u.doctor_id)) else None
-    } for u in users]), 200
+    # Explicit join with User and Doctor tables
+    query = db.session.query(User).outerjoin(Doctor, User.doctor_id == Doctor.id)
+    if name:
+        query = query.filter(
+            db.or_(
+                User.first_name.ilike(f'%{name}%'),
+                User.last_name.ilike(f'%{name}%'),
+                db.func.concat(User.first_name, ' ', User.last_name).ilike(f'%{name}%')
+            )
+        )
 
+    # Paginate the query
+    users = query.paginate(page=page, per_page=per_page, error_out=False)
+
+    # Debug the join
+    for u in users.items:
+        print(f"User ID: {u.id}, Doctor ID: {u.doctor_id}, Doctor: {u.doctor}, City: {u.doctor.city if u.doctor else None}")
+
+    # Build response
+    response = {
+        'users': [{
+            'user_id': u.id,
+            'first_name': u.first_name,
+            'last_name': u.last_name,
+            'is_doctor': u.is_doctor,
+            'doctor_id': u.doctor_id,
+            'specialty': u.doctor.specialty if u.is_doctor and u.doctor else None,
+            'city': u.doctor.city if u.is_doctor and u.doctor else None,
+            'gender': u.doctor.gender if u.is_doctor and u.doctor else None,
+            'image': u.doctor.image if u.is_doctor and u.doctor else None,
+            'address': u.doctor.address if u.is_doctor and u.doctor else None,
+            'phone': u.doctor.phone if u.is_doctor and u.doctor else None
+        } for u in users.items],
+        'total': users.total,
+        'pages': users.pages,
+        'page': users.page
+    }
+
+    return jsonify(response), 200
+
+@app.route('/api/doctors/<int:id>', methods=['GET'])
+def get_doctor_by_id(id):
+    doctor = db.session.get(Doctor, id)
+    if doctor:
+        return jsonify(doctor.to_dict())
+    return jsonify({'message': 'Doctor not found'}), 404
 # Login endpoint (unchanged)
 @app.route('/api/login', methods=['POST'])
 def login():
