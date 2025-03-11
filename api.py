@@ -165,16 +165,59 @@ def add_notification(user_id, message, related_message=None, sender_id=None, not
 
 # Public endpoints (unchanged)
 @app.route('/api/doctors', methods=['GET'])
+@jwt_required()
 def get_doctors():
-    doctors = Doctor.query.all()
-    return jsonify([doctor.to_dict() for doctor in doctors])
+    page = int(request.args.get('page', 1))
+    limit = int(request.args.get('limit', 5))
+    query = request.args.get('query', '')
+    specialty = request.args.get('specialty', '')
+    city = request.args.get('city', '')
 
-@app.route('/api/doctors/<int:id>', methods=['GET'])
-def get_doctor_by_id(id):
-    doctor = db.session.get(Doctor, id)
-    if doctor:
-        return jsonify(doctor.to_dict())
-    return jsonify({'message': 'Doctor not found'}), 404
+    doctors_query = Doctor.query
+    if query:
+        doctors_query = doctors_query.filter(Doctor.name.ilike(f'%{query}%'))
+    if specialty:
+        doctors_query = doctors_query.filter(Doctor.specialty == specialty)
+    if city:
+        doctors_query = doctors_query.filter(Doctor.city == city)
+
+    doctors = doctors_query.paginate(page=page, per_page=limit, error_out=False).items
+    return jsonify([{
+        'id': d.id,
+        'name': d.name,
+        'specialty': d.specialty,
+        'city': d.city,
+        'image': d.image,
+        'gender': d.gender
+    } for d in doctors]), 200
+
+@app.route('/api/users/search', methods=['GET'])
+@jwt_required()
+def search_users():
+    current_user_id = int(get_jwt_identity())
+    user = db.session.get(User, current_user_id)
+    if not user.is_doctor:
+        return jsonify({'message': 'Unauthorized: Doctors only'}), 403
+
+    query = request.args.get('query', '')
+    page = int(request.args.get('page', 1))
+    limit = int(request.args.get('limit', 5))
+
+    users_query = User.query.filter(
+        (User.first_name + ' ' + User.last_name).ilike(f'%{query}%')
+    )
+    users = users_query.paginate(page=page, per_page=limit, error_out=False).items
+    return jsonify([{
+        'user_id': u.id,
+        'first_name': u.first_name,
+        'last_name': u.last_name,
+        'is_doctor': u.is_doctor,
+        'doctor_id': u.doctor_id,
+        'specialty': d.specialty if u.is_doctor and (d := Doctor.query.get(u.doctor_id)) else None,
+        'city': d.city if u.is_doctor and (d := Doctor.query.get(u.doctor_id)) else None,
+        'gender': d.gender if u.is_doctor and (d := Doctor.query.get(u.doctor_id)) else None,
+        'image': d.image if u.is_doctor and (d := Doctor.query.get(u.doctor_id)) else None
+    } for u in users]), 200
 
 # Login endpoint (unchanged)
 @app.route('/api/login', methods=['POST'])
