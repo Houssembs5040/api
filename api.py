@@ -675,9 +675,8 @@ def send_message():
         'sent_at': new_message.sent_at.isoformat(),
         'is_read': new_message.is_read
     }
-    socketio.emit('new_message', message_data, room=str(receiver_id))
-    socketio.emit('new_message', message_data, room=str(current_user_id))
-
+    socketio.emit('new_message', message_data)#broadcast
+    
     chat_room = f"chat_{min(current_user_id, receiver_id)}_{max(current_user_id, receiver_id)}"
     receiver_rooms = socketio.server.manager.rooms.get('/', {}).get(str(receiver_id), [])
     if chat_room in receiver_rooms:
