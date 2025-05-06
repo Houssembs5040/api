@@ -1339,4 +1339,10 @@ def get_recent_doctors():
     return jsonify({'doctors': doctor_list}), 200
 
 if __name__ == '__main__':
+    # Run locally with Flask-SocketIO's development server
     socketio.run(app, debug=True, host='0.0.0.0', port=5000)
+else:
+    # Expose the WSGI application for production (Render, etc.)
+    application = app
+    # Optional: Explicitly initialize SocketIO for production compatibility
+    socketio.init_app(app)
